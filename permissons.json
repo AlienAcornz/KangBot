@@ -1,0 +1,13 @@
+{
+    "use-ids": false,
+    "role-heirarchy" : ["Kangawooo", "Admins", "Senior Moderator", "Junior Moderator", "Trial Mod"],
+
+    "role-perms" : {
+        "ban": "",
+        "kick": "",
+        "soft-ban": "",
+        "mute": "",
+        "timeout": "",
+        "notes": ""
+    }
+}

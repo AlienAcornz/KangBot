@@ -1,0 +1,14 @@
+===SPRINT 1===
+Check that the bot has permission to run a command before running it
+Check the user has permission to run a command before running it
+Check that the user should have permission to use the command on the targeted user
+Add more cogs (ban, softban, note, timeout, warn, mute)
+Add a banned by column to the database (every table)
+Add more tests to the database
+
+===SPRINT 2===
+Add Ban appeals
+Add ticket system
+
+===SPRINT 3===
+Web based UI
