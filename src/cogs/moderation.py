@@ -3,6 +3,7 @@ from discord.ext import commands
 from discord import app_commands
 from functools import wraps
 from config import DEV_GUILD_ID
+from src.services.db_service import db
 
 def check_role_hierarchy(func):
     @wraps(func)
@@ -35,15 +36,17 @@ class Moderation(commands.Cog):
     def __init__(self, bot) -> None:
         self.bot = bot
 
-    @app_commands.command()
+    @app_commands.command(name="kick", description="Kicks a user")
     @check_role_hierarchy
+    @app_commands.default_permissions(administrator=True)
     async def kick(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
         await member.kick(reason=reason)
         ostream = f"Kicked {member.mention} for: {reason}" if reason != "" else f"Kicked {member.mention}"
         await interaction.response.send_message(ostream)
 
-    @app_commands.command()
+    @app_commands.command(name="softban", description="Temporarily bans and then unbans a user")
     @check_role_hierarchy
+    @app_commands.default_permissions(administrator=True)
     async def softban(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
         await member.ban(reason=reason)
         await member.unban(reason=reason)
@@ -56,6 +59,7 @@ class Moderation(commands.Cog):
 
     @app_commands.guilds(discord.Object(id=DEV_GUILD_ID))
     @app_commands.command(name="update", description="Updates the command list")
+    @app_commands.default_permissions(administrator=True)
     async def update(self, interaction: discord.Interaction, scope: str = "guild"):
         await interaction.response.defer(ephemeral=True)
 
@@ -67,6 +71,21 @@ class Moderation(commands.Cog):
             synced = await self.bot.tree.sync(guild=interaction.guild)
             await interaction.followup.send(f"Synced `{len(synced)}` commands to this guild.")
 
+    @app_commands.guilds(discord.Object(id=DEV_GUILD_ID))
+    @app_commands.command(name="add-note", description="Adds a note to a user")
+    @app_commands.default_permissions(administrator=True)
+    async def add_note(self, interaction: discord.Interaction, member: discord.Member, note: str):
+        await interaction.response.defer(ephemeral=True)
+        await db.record_note(staff_id=interaction.user.id, user_id=member.id, username=member.name, reason=note) #TODO Add error catching here lowk kinda risky atm
+        await interaction.followup.send(f"Added a note to {member.mention}")
 
+    @app_commands.guilds(discord.Object(id=DEV_GUILD_ID))
+    @app_commands.command(name="get-note", description="Gets a users notes")
+    @app_commands.default_permissions(administrator=True)
+    async def get_notes(self, interaction: discord.Interaction, member: discord.Member):
+        await interaction.response.defer(ephemeral=True)
+        notes = await db.get_notes(user_id=member.id)
+
+        await interaction.followup.send(str(notes))
 async def setup(bot):
     await bot.add_cog(Moderation(bot))

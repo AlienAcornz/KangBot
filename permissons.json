@@ -1,13 +1,18 @@
 {
-    "use-ids": false,
-    "role-heirarchy" : ["Kangawooo", "Admins", "Senior Moderator", "Junior Moderator", "Trial Mod"],
+    "use_ids": true,
+    "KANGIDS_role_hierarchy" : [[311367921104191609, "Kangawooo"], [1491510919933726882,"Admins"], [1311372270874267778, "Senior Moderator"], [1345050780134150239,"Junior Moderator"], [1398713601824653412,"Trial Mod"]],
 
-    "role-perms" : {
+    "role_hierarchy": [[311367921104191609, "Kangawooo"], [1491510919933726882,"Admins"], [1311372270874267778, "Senior Moderator"], [1345050780134150239,"Junior Moderator"], [1398713601824653412,"Trial Mod"]],
+
+    "command_perms" : {
         "ban": "",
         "kick": "",
-        "soft-ban": "",
+        "softban": "",
         "mute": "",
         "timeout": "",
-        "notes": ""
+        "read_notes": "",
+        "write_notes": "",
+        "read_warns": "",
+        "write_warns": ""
     }
 }

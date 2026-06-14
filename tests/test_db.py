@@ -39,7 +39,7 @@ async def test_append_user_userid(moddb):
 async def test_record_note_user_exists(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_note(user_id=12, username="John", reason="Too cool")
+    await moddb.record_note(user_id=12, username="John", reason="Too cool", staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -48,7 +48,7 @@ async def test_record_note_user_exists(moddb):
 
 @pytest.mark.asyncio
 async def test_record_note_user_doesnt_exist(moddb):
-    await moddb.record_note(user_id=16, username="Philip", reason="Too cool")
+    await moddb.record_note(user_id=16, username="Philip", reason="Too cool", staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND content = ?)", (16, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -58,18 +58,18 @@ async def test_record_note_user_doesnt_exist(moddb):
 @pytest.mark.asyncio
 async def test_record_note_user_doesnt_exist_only_username(moddb):
     with pytest.raises(TypeError):
-        await moddb.record_note( username="Fan", reason="Too cool")
+        await moddb.record_note( username="Fan", reason="Too cool", staff_id=1)
 
 @pytest.mark.asyncio
 async def test_record_note_user_doesnt_exist_only_userid(moddb):
     with pytest.raises(TypeError):
-        await moddb.record_note( user_id=23, reason="Too cool")
+        await moddb.record_note( user_id=23, reason="Too cool", staff_id=1)
 
 @pytest.mark.asyncio
 async def test_record_note_via_username(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_note(username="John", reason="Too cool")
+    await moddb.record_note(username="John", reason="Too cool", staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -80,7 +80,7 @@ async def test_record_note_via_username(moddb):
 async def test_record_note_via_userid(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_note(user_id=12, reason="Too cool")
+    await moddb.record_note(user_id=12, reason="Too cool", staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -93,7 +93,7 @@ async def test_record_note_via_userid(moddb):
 async def test_record_ban_user_exists(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_ban(user_id=12, username="John", reason="Too cool",unban_date=datetime.datetime.now())
+    await moddb.record_ban(user_id=12, username="John", reason="Too cool",unban_date=datetime.datetime.now(), staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM bans WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -102,7 +102,7 @@ async def test_record_ban_user_exists(moddb):
 
 @pytest.mark.asyncio
 async def test_record_ban_user_doesnt_exist(moddb):
-    await moddb.record_ban(user_id=16, username="Philip", reason="Too cool", unban_date=datetime.datetime.now())
+    await moddb.record_ban(user_id=16, username="Philip", reason="Too cool", unban_date=datetime.datetime.now(), staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND content = ?)", (16, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -112,18 +112,18 @@ async def test_record_ban_user_doesnt_exist(moddb):
 @pytest.mark.asyncio
 async def test_record_ban_user_doesnt_exist_only_username(moddb):
     with pytest.raises(TypeError):
-        await moddb.record_ban( username="Fan", reason="Too cool", unban_date=datetime.datetime.now())
+        await moddb.record_ban( username="Fan", reason="Too cool", unban_date=datetime.datetime.now(), staff_id=1)
 
 @pytest.mark.asyncio
 async def test_record_ban_user_doesnt_exist_only_userid(moddb):
     with pytest.raises(TypeError):
-        await moddb.record_ban( user_id=23, reason="Too cool", unban_date=datetime.datetime.now())
+        await moddb.record_ban( user_id=23, reason="Too cool", unban_date=datetime.datetime.now(), staff_id=1)
 
 @pytest.mark.asyncio
 async def test_record_ban_via_username(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_ban(username="John", reason="Too cool", unban_date=datetime.datetime.now())
+    await moddb.record_ban(username="John", reason="Too cool", unban_date=datetime.datetime.now(), staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM bans WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -134,11 +134,38 @@ async def test_record_ban_via_username(moddb):
 async def test_record_ban_via_userid(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_ban(user_id=12, reason="Too cool", unban_date=datetime.datetime.now())
+    await moddb.record_ban(user_id=12, reason="Too cool", unban_date=datetime.datetime.now(), staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM bans WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
 
     assert exists is True
 
+
+#=============GET NOTES TESTS================
+@pytest.mark.asyncio
+async def test_get_note_by_id(moddb):
+    await moddb.append_user(user_id=13, username="Jeff")
+
+    await moddb.record_note(user_id=13, reason="Too cool", staff_id=1)
+
+    result = await moddb.get_notes(user_id=13)
+
+    assert result[0][1] == "Too cool"
+
+@pytest.mark.asyncio
+async def test_get_note_by_username():
+    pass
+
+@pytest.mark.asyncio
+async def test_get_note_by_id_user_exists_but_no_notes():
+    pass
+
+@pytest.mark.asyncio
+async def test_get_note_by_id_user_not_exists():
+    pass
+
+@pytest.mark.asyncio
+async def test_get_note_by_username_user_not_exists():
+    pass
 # TODO WRITE MORE TESTS

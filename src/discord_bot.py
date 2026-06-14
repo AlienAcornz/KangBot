@@ -4,6 +4,7 @@ from discord import app_commands
 import logging
 from config import TOKEN,BUILD_TYPE, DEV_GUILD_ID
 import os
+from src.services.db_service import db
 
 handler = logging.FileHandler(filename='discord.log', encoding='utf-8', mode='w')
 
@@ -27,7 +28,7 @@ class Bot(commands.Bot):
         if BUILD_TYPE == "RELEASE":
             await self.tree.sync()
         elif BUILD_TYPE == "DEV":
-            #self.tree.clear_commands(guild=None)
+            #self.tree.clear_commands(guild=None) ONLY UN-COMMENT THIS IF THERE ARE DUPLICATE COMMANDS
             #await self.tree.sync()
 
             GUILD = discord.Object(id=int(DEV_GUILD_ID))
@@ -35,9 +36,12 @@ class Bot(commands.Bot):
             await self.tree.sync(guild=GUILD)
         else:
             raise ValueError("Invalid build type used in .env")
+        
+        await db.connect()
 
     async def on_ready(self):
         print(f"Logged in as {self.user}")
+
 
 bot = Bot()
 bot.run(TOKEN, log_handler=handler, log_level=logging.DEBUG)

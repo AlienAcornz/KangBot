@@ -3,11 +3,10 @@ import aiosqlite
 import datetime
 from typing import Optional
 from functools import wraps
+from config import DB_PATH
 
-DB_PATH = "moderation.db"
-
-
-def resolve_user(func):
+"""
+def resolve_user(func): #OLD FUNCTION WRITTEN BY ME WHICH SUCKS
      @wraps(func)
 
      async def wrapper(self, user_id: Optional[int] = None, username: Optional[str] = None, *args, **kwargs):
@@ -25,6 +24,52 @@ def resolve_user(func):
         return await func(self, user_id=user_id, username=username, *args, **kwargs)
      
      return wrapper
+     """
+
+import inspect
+def resolve_user(func): #AI WRITTEN FUNCTION REWRITE LATER
+    # Inspect the wrapped function's signature once at decoration time
+    sig = inspect.signature(func)
+    has_username_param = "username" in sig.parameters
+
+    @wraps(func)
+    async def wrapper(self, *args, **kwargs):
+        # 1. Safely extract username and user_id from kwargs
+        username = kwargs.pop("username", None)
+        user_id = kwargs.get("user_id", None)
+        
+        # If user_id wasn't in kwargs, check if it was passed as the first positional argument
+        passed_user_id_positionally = False
+        if user_id is None and args:
+            user_id = args[0]
+            passed_user_id_positionally = True
+        
+        # 2. Validation
+        if user_id is None and username is None:
+            raise ValueError("Either user_id or username must be provided")
+        
+        # 3. Resolve username to user_id if needed
+        if username is not None and user_id is None:
+            user_id = await self.get_user_id(username)
+            is_creation_func = func.__name__ in ("record_note", "record_ban", "record_warning")
+            if user_id is None and not is_creation_func:
+                raise ValueError(f"User '{username}' not found")
+        
+        # 4. Reconstruct arguments accurately for the underlying function
+        if passed_user_id_positionally:
+            # Replace the first positional argument with the resolved user_id
+            final_args = (user_id,) + args[1:]
+        else:
+            final_args = args
+            kwargs["user_id"] = user_id
+            
+        # Only pass username back if the function explicitly expects it (e.g., creation functions)
+        if username is not None and has_username_param:
+            kwargs["username"] = username
+            
+        return await func(self, *final_args, **kwargs)
+        
+    return wrapper
 
 class ModDB:
     def __init__(self, db_path):
@@ -60,6 +105,7 @@ class ModDB:
                 content TEXT NOT NULL,
                 ban_date DATETIME,
                 unban_date DATETIME,
+                staff_id INTEGER,
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
         ''')
@@ -72,6 +118,7 @@ class ModDB:
                 content TEXT NOT NULL,
                 timestamp DATETIME,
                 is_warning INTEGER,
+                staff_id INTEGER,
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
         ''')
@@ -97,35 +144,35 @@ class ModDB:
                 await self.db.commit()
 
 
-    async def record_warning(self, user_id: Optional[int], reason: str, username: Optional[str]=None): #records a warning
-        await self.record_note(user_id=user_id, reason=reason, is_warning=1, username=username)
+    async def record_warning(self, staff_id: int, user_id: Optional[int], reason: str, username: Optional[str]=None): #records a warning
+        await self.record_note(user_id=user_id, reason=reason, is_warning=1, username=username, staff_id=staff_id)
 
     @resolve_user
-    async def record_note(self, user_id: Optional[int], reason: str, username: Optional[str]=None, is_warning: int = 0):
+    async def record_note(self, staff_id: int, user_id: Optional[int], reason: str, username: Optional[str]=None, is_warning: int = 0):
         await self.append_user(user_id=user_id, username=username)
 
         await self.db.execute(
-            "INSERT INTO notes (user_id, content, timestamp, is_warning) VALUES (?, ?, ?, ?)",
-            (user_id, reason, datetime.datetime.now(), is_warning)
+            "INSERT INTO notes (user_id, content, timestamp, is_warning, staff_id) VALUES (?, ?, ?, ?, ?)",
+            (user_id, reason, datetime.datetime.now(), is_warning, staff_id)
         )
         await self.db.commit()
 
     @resolve_user
-    async def record_ban(self, user_id: Optional[int],  reason: str, unban_date: datetime.datetime, username: Optional[str] = None):
+    async def record_ban(self, staff_id: int, user_id: Optional[int],  reason: str, unban_date: datetime.datetime, username: Optional[str] = None):
             await self.append_user(user_id=user_id, username=username)
 
             await self.db.execute(
-                "INSERT INTO bans (user_id, content, ban_date, unban_date) VALUES (?, ?, ?, ?)",
-                (user_id, reason, datetime.datetime.now(), unban_date)
+                "INSERT INTO bans (user_id, content, ban_date, unban_date, staff_id) VALUES (?, ?, ?, ?, ?)",
+                (user_id, reason, datetime.datetime.now(), unban_date, staff_id)
             )
             await self.db.commit()
 
 
     @resolve_user
     async def get_notes(self, user_id: Optional[int], isWarning: int = 0):
-        cursor = await self.db.execute("SELECT  note_id, content FROM notes WHERE user_id = ? AND is_warning = ?", (user_id,isWarning))
+        cursor = await self.db.execute("SELECT  note_id, content, staff_id FROM notes WHERE user_id = ? AND is_warning = ?", (user_id,isWarning))
         rows = await cursor.fetchall()
-        return [(row[0], row[1]) for row in rows]
+        return [(row[1], row[2]) for row in rows]
 
 
     async def get_warnings(self, user_id: Optional[int]):
@@ -156,7 +203,7 @@ class ModDB:
         await self.db.commit()
 
         if silent == False:
-             await self.record_note(user_id=user_id,reason=f"User was previously banned with the reason: {ban_reason}")
+             await self.record_note(user_id=user_id,reason=f"User was previously banned with the reason: {ban_reason}", staff_id=0) #NOTE STAFF ID SET TO 0. THIS SHOULD PROBABLY CHANGE IN THE FUTURE
 
 
     async def revoke_warning(self, user_id: Optional[int], warning_id: int):
@@ -194,3 +241,5 @@ class ModDB:
         row = await cursor.fetchone()
 
         return row[0] if row else None
+    
+db = ModDB(db_path=DB_PATH)
