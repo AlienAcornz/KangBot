@@ -4,72 +4,7 @@ import datetime
 from typing import Optional
 from functools import wraps
 from config import DB_PATH
-
-"""
-def resolve_user(func): #OLD FUNCTION WRITTEN BY ME WHICH SUCKS
-     @wraps(func)
-
-     async def wrapper(self, user_id: Optional[int] = None, username: Optional[str] = None, *args, **kwargs):
-        if user_id is None and username is None:
-            raise ValueError("Either user_id or username must be provided")
-        
-        if username is not None and user_id is None:
-            user_id = await self.get_user_id(username)
-
-            is_creation_func = func.__name__ in ("record_note", "record_ban", "record_warning")
-
-            if user_id is None and not is_creation_func:
-                raise ValueError(f"User '{username}' not found")
-        
-        return await func(self, user_id=user_id, username=username, *args, **kwargs)
-     
-     return wrapper
-     """
-
-import inspect
-def resolve_user(func): #AI WRITTEN FUNCTION REWRITE LATER
-    # Inspect the wrapped function's signature once at decoration time
-    sig = inspect.signature(func)
-    has_username_param = "username" in sig.parameters
-
-    @wraps(func)
-    async def wrapper(self, *args, **kwargs):
-        # 1. Safely extract username and user_id from kwargs
-        username = kwargs.pop("username", None)
-        user_id = kwargs.get("user_id", None)
-        
-        # If user_id wasn't in kwargs, check if it was passed as the first positional argument
-        passed_user_id_positionally = False
-        if user_id is None and args:
-            user_id = args[0]
-            passed_user_id_positionally = True
-        
-        # 2. Validation
-        if user_id is None and username is None:
-            raise ValueError("Either user_id or username must be provided")
-        
-        # 3. Resolve username to user_id if needed
-        if username is not None and user_id is None:
-            user_id = await self.get_user_id(username)
-            is_creation_func = func.__name__ in ("record_note", "record_ban", "record_warning")
-            if user_id is None and not is_creation_func:
-                raise ValueError(f"User '{username}' not found")
-        
-        # 4. Reconstruct arguments accurately for the underlying function
-        if passed_user_id_positionally:
-            # Replace the first positional argument with the resolved user_id
-            final_args = (user_id,) + args[1:]
-        else:
-            final_args = args
-            kwargs["user_id"] = user_id
-            
-        # Only pass username back if the function explicitly expects it (e.g., creation functions)
-        if username is not None and has_username_param:
-            kwargs["username"] = username
-            
-        return await func(self, *final_args, **kwargs)
-        
-    return wrapper
+from src.schemas.db_schemas import UserNotes, Note
 
 class ModDB:
     def __init__(self, db_path):
@@ -131,6 +66,20 @@ class ModDB:
             await self._db.close()
             self._db = None
 
+    async def validate_inputs(self, input) -> int:
+        if isinstance(input, int):
+            return input
+
+        if isinstance(input, str):
+            user_id = await self.get_user_id(input)
+            if user_id is None:
+                print("COULDNT FIND USER")
+                raise ValueError(f"Could not find user: {input} in the database")
+            return int(user_id)
+
+        raise ValueError("Please enter a valid type for the user field.")
+
+
     async def append_user(self, user_id: Optional[int], username: Optional[str] = None):
             cursor = await self.db.execute("SELECT EXISTS(SELECT 1 FROM users WHERE user_id = ?)", (user_id,))
             result = await cursor.fetchone()
@@ -147,7 +96,7 @@ class ModDB:
     async def record_warning(self, staff_id: int, user_id: Optional[int], reason: str, username: Optional[str]=None): #records a warning
         await self.record_note(user_id=user_id, reason=reason, is_warning=1, username=username, staff_id=staff_id)
 
-    @resolve_user
+    
     async def record_note(self, staff_id: int, user_id: Optional[int], reason: str, username: Optional[str]=None, is_warning: int = 0):
         await self.append_user(user_id=user_id, username=username)
 
@@ -157,7 +106,7 @@ class ModDB:
         )
         await self.db.commit()
 
-    @resolve_user
+    
     async def record_ban(self, staff_id: int, user_id: Optional[int],  reason: str, unban_date: datetime.datetime, username: Optional[str] = None):
             await self.append_user(user_id=user_id, username=username)
 
@@ -168,18 +117,35 @@ class ModDB:
             await self.db.commit()
 
 
-    @resolve_user
-    async def get_notes(self, user_id: Optional[int], isWarning: int = 0):
-        cursor = await self.db.execute("SELECT  note_id, content, staff_id FROM notes WHERE user_id = ? AND is_warning = ?", (user_id,isWarning))
-        rows = await cursor.fetchall()
-        return [(row[1], row[2]) for row in rows]
+    
+    async def get_notes(self, user, isWarning: int = 0) -> UserNotes:
+        user_id = await self.validate_inputs(user)
+        cursor = await self.db.execute("""
+    SELECT users.username, notes.staff_id, notes.content
+    FROM notes
+    INNER JOIN users ON notes.user_id = users.user_id
+    WHERE notes.user_id = ? AND notes.is_warning = ?
+""", (user_id,isWarning))
+        rows = list(await cursor.fetchall())
+
+        if not rows:
+            return UserNotes(username="null", notes=[])
+
+        username = str(user_id)
+        if rows:
+            username = rows[0][0]
+
+        total_notes = []
+        for note in rows:
+            total_notes.append(Note(staff_id=note[1], content=note[2]))
+        return UserNotes(username=username, notes=total_notes)
 
 
     async def get_warnings(self, user_id: Optional[int]):
         return await self.get_notes(user_id,isWarning = 1)
     
 
-    @resolve_user
+    
     async def get_ban_reason(self, user_id: Optional[int]):
         if self.db is None:
             raise RuntimeError("Database not connected!")
@@ -189,7 +155,7 @@ class ModDB:
         return row[0] if row else None
 
 
-    @resolve_user
+    
     async def revoke_ban(self, user_id: Optional[int], silent: bool = False):
         if self.db is None:
             raise RuntimeError("Database not connected!")
@@ -210,7 +176,7 @@ class ModDB:
         await self.revoke_note(user_id, warning_id)
 
 
-    @resolve_user
+    
     async def revoke_note(self, user_id: Optional[int], note_id: int):
         if self.db is None:
             raise RuntimeError("Database not connected!")

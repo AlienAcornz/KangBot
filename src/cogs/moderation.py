@@ -2,8 +2,10 @@ import discord
 from discord.ext import commands
 from discord import app_commands
 from functools import wraps
-from config import DEV_GUILD_ID
 from src.services.db_service import db
+from src.utils.db_utils import run_with_timeout
+from src.utils.input_utils import sanitize_inputs
+import asyncio
 
 def check_role_hierarchy(func):
     @wraps(func)
@@ -36,56 +38,92 @@ class Moderation(commands.Cog):
     def __init__(self, bot) -> None:
         self.bot = bot
 
+    async def autocomplete(self, interaction:discord.Interaction, current: str) -> list[app_commands.Choice[str]]:
+        choices = []
+        if not interaction.guild: #If command being ran as a DM return []
+            return []
+        
+        current_lower = current.lower()
+        for member in interaction.guild.members:
+            if current_lower in member.name.lower() or (member.nick and current_lower in member.nick.lower()): #If the guild member has a name or a nickname that contains the content field, display the user.
+                choices.append(
+                    app_commands.Choice(
+                        name=f"{member.display_name} (@{member.name})", 
+                        value=str(member.id)
+                    )
+                )
+            if len(choices) >= 25:
+                break
+                    
+        return choices
+
     @app_commands.command(name="kick", description="Kicks a user")
     @check_role_hierarchy
     @app_commands.default_permissions(administrator=True)
-    async def kick(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
+    async def kick_command(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
         await member.kick(reason=reason)
         ostream = f"Kicked {member.mention} for: {reason}" if reason != "" else f"Kicked {member.mention}"
         await interaction.response.send_message(ostream)
 
+
+
     @app_commands.command(name="softban", description="Temporarily bans and then unbans a user")
     @check_role_hierarchy
     @app_commands.default_permissions(administrator=True)
-    async def softban(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
+    async def softban_command(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
         await member.ban(reason=reason)
         await member.unban(reason=reason)
         await interaction.response.send_message(f"{member.mention} softbanned!")
 
-    @app_commands.command()
-    async def hello(self, interaction: discord.Interaction):
-        roles = interaction.user.roles if isinstance(interaction.user, discord.Member) else "No roles"
-        await interaction.response.send_message(f"Hello! {interaction.user.mention}, {roles}", ephemeral=True)
+    
 
-    @app_commands.guilds(discord.Object(id=DEV_GUILD_ID))
-    @app_commands.command(name="update", description="Updates the command list")
-    @app_commands.default_permissions(administrator=True)
-    async def update(self, interaction: discord.Interaction, scope: str = "guild"):
-        await interaction.response.defer(ephemeral=True)
 
-        if scope == "global":
-            synced = await self.bot.tree.sync()
-            await interaction.followup.send(f"Synced `{len(synced)}` commands globally.")
-        else:
-            self.bot.tree.copy_global_to(guild=interaction.guild)
-            synced = await self.bot.tree.sync(guild=interaction.guild)
-            await interaction.followup.send(f"Synced `{len(synced)}` commands to this guild.")
-
-    @app_commands.guilds(discord.Object(id=DEV_GUILD_ID))
     @app_commands.command(name="add-note", description="Adds a note to a user")
     @app_commands.default_permissions(administrator=True)
-    async def add_note(self, interaction: discord.Interaction, member: discord.Member, note: str):
+    async def add_note_command(self, interaction: discord.Interaction, member: discord.Member, note: str):
         await interaction.response.defer(ephemeral=True)
-        await db.record_note(staff_id=interaction.user.id, user_id=member.id, username=member.name, reason=note) #TODO Add error catching here lowk kinda risky atm
+        success, result = await run_with_timeout(db.record_note(staff_id=interaction.user.id, user_id=member.id, username=member.name, reason=note))
+
+        if not success:
+            if isinstance(result, asyncio.TimeoutError):
+                await interaction.followup.send("The command timed out!")
+            else:
+                await interaction.followup.send("There was an error performing the command!")
         await interaction.followup.send(f"Added a note to {member.mention}")
 
-    @app_commands.guilds(discord.Object(id=DEV_GUILD_ID))
-    @app_commands.command(name="get-note", description="Gets a users notes")
-    @app_commands.default_permissions(administrator=True)
-    async def get_notes(self, interaction: discord.Interaction, member: discord.Member):
-        await interaction.response.defer(ephemeral=True)
-        notes = await db.get_notes(user_id=member.id)
 
-        await interaction.followup.send(str(notes))
+
+    @app_commands.command(name="get-notes", description="Gets a users notes")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.autocomplete(input=autocomplete)
+    async def get_notes_command(self, interaction: discord.Interaction, input: str):
+        await interaction.response.defer(ephemeral=True)
+        target = await sanitize_inputs(input)
+
+
+        success, notes_package = await run_with_timeout(db.get_notes(user=target))
+
+        if not success:
+            if isinstance(notes_package, asyncio.TimeoutError):
+                await interaction.followup.send("The command timed out!")
+                return False
+            else:
+                await interaction.followup.send("There was an error performing the command!")
+                return False
+
+        if notes_package.username == "null":
+            #USER NOT FOUND TODO
+            pass
+
+        embed = discord.Embed(title=f"Notes for {notes_package.username}")
+
+        notes = notes_package.notes
+        if notes == []:
+            embed.add_field(name="No notes!", value="The user has no notes")
+        for note in notes:
+            embed.add_field(name=note.content, value=f"Added by: {note.staff_id}", inline=False)
+
+        await interaction.followup.send(embed=embed)
+
 async def setup(bot):
     await bot.add_cog(Moderation(bot))

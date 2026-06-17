@@ -28,7 +28,7 @@ class Bot(commands.Bot):
         if BUILD_TYPE == "RELEASE":
             await self.tree.sync()
         elif BUILD_TYPE == "DEV":
-            #self.tree.clear_commands(guild=None) ONLY UN-COMMENT THIS IF THERE ARE DUPLICATE COMMANDS
+            #self.tree.clear_commands(guild=None) #ONLY UN-COMMENT THIS IF THERE ARE DUPLICATE COMMANDS
             #await self.tree.sync()
 
             GUILD = discord.Object(id=int(DEV_GUILD_ID))
