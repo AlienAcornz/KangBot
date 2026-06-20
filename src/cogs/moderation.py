@@ -6,25 +6,23 @@ from src.services.db_service import db
 from src.utils.db_utils import run_with_timeout
 from src.utils.input_utils import sanitize_inputs
 import asyncio
+from src.utils.bot_ui import ui_response_message, ui_notes_message
 
 def check_role_hierarchy(func):
     @wraps(func)
     async def wrapper(self, interaction: discord.Interaction, member: discord.Member, *args, **kwargs):
 
         if interaction.user == member: #If the person running the command is the same as the target user
-            await interaction.response.send_message("You cannot moderate yourself!",ephemeral=True)
+            await interaction.response.send_message(embed=ui_response_message(contents="❌ You cannot moderate yourself!", tone="negative"),ephemeral=True)
             return
 
         if not isinstance(interaction.user, discord.Member):
-            await interaction.response.send_message(
-                "This command must be used in a server where role hierarchy is available.",
-                ephemeral=True
-            )
+            await interaction.response.send_message(embed=ui_response_message(contents="❌This command must be used in a server where role hierarchy is available.", tone="negative"),ephemeral=True)
             return
 
         if member.top_role >= interaction.user.top_role:
             await interaction.response.send_message(
-                "You cannot moderate a member with a role equal to or higher than yours!",
+                embed=ui_response_message(contents="❌You cannot moderate a member with a role equal to or higher than yours!", tone="negative"),
                 ephemeral=True
             )
             return
@@ -73,57 +71,61 @@ class Moderation(commands.Cog):
     async def softban_command(self, interaction: discord.Interaction, member: discord.Member, reason: str = ""):
         await member.ban(reason=reason)
         await member.unban(reason=reason)
-        await interaction.response.send_message(f"{member.mention} softbanned!")
+        await interaction.response.send_message(embed=ui_response_message(f"✅ Softbanned {member.name}", tone="positive"), ephemeral=True)
 
-    
 
 
     @app_commands.command(name="add-note", description="Adds a note to a user")
     @app_commands.default_permissions(administrator=True)
-    async def add_note_command(self, interaction: discord.Interaction, member: discord.Member, note: str):
+    async def add_note_command(self, interaction: discord.Interaction, member: discord.Member, note: app_commands.Range[str, 1, 245]):
         await interaction.response.defer(ephemeral=True)
         success, result = await run_with_timeout(db.record_note(staff_id=interaction.user.id, user_id=member.id, username=member.name, reason=note))
 
         if not success:
             if isinstance(result, asyncio.TimeoutError):
-                await interaction.followup.send("The command timed out!")
+                await interaction.followup.send(embed=ui_response_message(contents="⌛The action timed out",tone="negative"))
             else:
-                await interaction.followup.send("There was an error performing the command!")
-        await interaction.followup.send(f"Added a note to {member.mention}")
-
+                await interaction.followup.send(embed=ui_response_message(contents="❌An error occured", tone="negative"))
+        await interaction.followup.send(embed=ui_response_message(contents=f"✅Added a note to {member.name}", tone="positive"))
 
 
     @app_commands.command(name="get-notes", description="Gets a users notes")
     @app_commands.default_permissions(administrator=True)
-    @app_commands.autocomplete(input=autocomplete)
-    async def get_notes_command(self, interaction: discord.Interaction, input: str):
+    @app_commands.autocomplete(query=autocomplete)
+    async def get_notes_command(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer(ephemeral=True)
-        target = await sanitize_inputs(input)
+        target = await sanitize_inputs(query)
 
 
-        success, notes_package = await run_with_timeout(db.get_notes(user=target))
+        _, notes_package = await run_with_timeout(db.get_notes(user=target))
 
-        if not success:
+        if isinstance(notes_package, Exception):
             if isinstance(notes_package, asyncio.TimeoutError):
-                await interaction.followup.send("The command timed out!")
-                return False
+                await interaction.followup.send(embed=ui_response_message("⌛ The command timed out!", tone="neutral"))
             else:
-                await interaction.followup.send("There was an error performing the command!")
-                return False
+                await interaction.followup.send(embed=ui_response_message("❌ There was an error performing the command", tone="negative"))
+            return
 
         if notes_package.username == "null":
-            #USER NOT FOUND TODO
-            pass
+            await interaction.followup.send(embed=ui_response_message("❌ Could not find the target!", tone="negative"))
+            return False
 
-        embed = discord.Embed(title=f"Notes for {notes_package.username}")
+        await interaction.followup.send(embed=ui_notes_message(notes_package))
 
-        notes = notes_package.notes
-        if notes == []:
-            embed.add_field(name="No notes!", value="The user has no notes")
-        for note in notes:
-            embed.add_field(name=note.content, value=f"Added by: {note.staff_id}", inline=False)
 
-        await interaction.followup.send(embed=embed)
+    @app_commands.command(name="delete-note", description="Gets a users notes")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.autocomplete(query=autocomplete)
+    async def revoke_note_command(self, interaction: discord.Interaction, query: str, note_id: int):
+        await interaction.response.defer(ephemeral=True)
+        target = await sanitize_inputs(query)
+
+        success = await db.revoke_note(user=target, note_id=note_id)
+        if not success:
+            await interaction.followup.send(embed=ui_response_message("❌Could not find the user or note id", tone="negative"))
+            return
+        
+        await interaction.followup.send(embed=ui_response_message("✅Note successfully removed", tone="positive"))
 
 async def setup(bot):
     await bot.add_cog(Moderation(bot))

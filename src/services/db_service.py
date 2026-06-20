@@ -2,7 +2,6 @@ import asyncio
 import aiosqlite
 import datetime
 from typing import Optional
-from functools import wraps
 from config import DB_PATH
 from src.schemas.db_schemas import UserNotes, Note
 
@@ -48,12 +47,13 @@ class ModDB:
         #notes table
         await self.db.execute('''
             CREATE TABLE IF NOT EXISTS notes (
-                note_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                note_id INTEGER,
                 user_id INTEGER,
                 content TEXT NOT NULL,
                 timestamp DATETIME,
                 is_warning INTEGER,
                 staff_id INTEGER,
+                PRIMARY KEY (user_id, note_id),
                 FOREIGN KEY (user_id) REFERENCES users (user_id)
             )
         ''')
@@ -93,19 +93,26 @@ class ModDB:
                 await self.db.commit()
 
 
-    async def record_warning(self, staff_id: int, user_id: Optional[int], reason: str, username: Optional[str]=None): #records a warning
-        await self.record_note(user_id=user_id, reason=reason, is_warning=1, username=username, staff_id=staff_id)
+    async def record_warning(self, staff_id: int, user_id: int, reason: str): #records a warning
+        await self.record_note(user_id=user_id, reason=reason, is_warning=1, staff_id=staff_id)
 
     
-    async def record_note(self, staff_id: int, user_id: Optional[int], reason: str, username: Optional[str]=None, is_warning: int = 0):
+    async def record_note(self, staff_id: int, user_id: int, reason: str, username: Optional[str]=None, is_warning: int = 0):
         await self.append_user(user_id=user_id, username=username)
-
-        await self.db.execute(
-            "INSERT INTO notes (user_id, content, timestamp, is_warning, staff_id) VALUES (?, ?, ?, ?, ?)",
-            (user_id, reason, datetime.datetime.now(), is_warning, staff_id)
+        query = """
+        INSERT INTO notes (user_id, note_id, content, timestamp, is_warning, staff_id) 
+        VALUES (
+            ?, 
+            (SELECT COALESCE(MAX(note_id), 0) + 1 FROM notes WHERE user_id = ?), 
+            ?, ?, ?, ?
         )
-        await self.db.commit()
+        """
+        await self.db.execute(
+        query,
+        (user_id, user_id, reason, datetime.datetime.now(), is_warning, staff_id)
+        )
 
+        await self.db.commit()
     
     async def record_ban(self, staff_id: int, user_id: Optional[int],  reason: str, unban_date: datetime.datetime, username: Optional[str] = None):
             await self.append_user(user_id=user_id, username=username)
@@ -121,7 +128,7 @@ class ModDB:
     async def get_notes(self, user, isWarning: int = 0) -> UserNotes:
         user_id = await self.validate_inputs(user)
         cursor = await self.db.execute("""
-    SELECT users.username, notes.staff_id, notes.content
+    SELECT users.username, notes.staff_id, notes.content, notes.note_id, notes.timestamp
     FROM notes
     INNER JOIN users ON notes.user_id = users.user_id
     WHERE notes.user_id = ? AND notes.is_warning = ?
@@ -137,7 +144,7 @@ class ModDB:
 
         total_notes = []
         for note in rows:
-            total_notes.append(Note(staff_id=note[1], content=note[2]))
+            total_notes.append(Note(staff_id=note[1], content=note[2], note_id=note[3], timestamp=note[4]))
         return UserNotes(username=username, notes=total_notes)
 
 
@@ -156,7 +163,7 @@ class ModDB:
 
 
     
-    async def revoke_ban(self, user_id: Optional[int], silent: bool = False):
+    async def revoke_ban(self, user_id: int, silent: bool = False):
         if self.db is None:
             raise RuntimeError("Database not connected!")
 
@@ -172,18 +179,23 @@ class ModDB:
              await self.record_note(user_id=user_id,reason=f"User was previously banned with the reason: {ban_reason}", staff_id=0) #NOTE STAFF ID SET TO 0. THIS SHOULD PROBABLY CHANGE IN THE FUTURE
 
 
-    async def revoke_warning(self, user_id: Optional[int], warning_id: int):
+    async def revoke_warning(self, user_id: int, warning_id: int):
         await self.revoke_note(user_id, warning_id)
 
 
     
-    async def revoke_note(self, user_id: Optional[int], note_id: int):
+    async def revoke_note(self, user, note_id: int):
+        user_id = await self.validate_inputs(user)
         if self.db is None:
             raise RuntimeError("Database not connected!")
     
-        await self.db.execute("DELETE FROM notes WHERE user_id = ? AND note_id = ?", (user_id,note_id))
+        cursor = await self.db.execute("DELETE FROM notes WHERE user_id = ? AND note_id = ?", (user_id,note_id))
 
         await self.db.commit()
+
+        success = cursor.rowcount > 0
+        return success
+
 
 
     async def clean_users(self): #deletes all users that do not have a note or a ban from the database
