@@ -15,6 +15,12 @@ DEV_GUILD_ID: str = os.getenv('DEVELOPMENT_GUILD_ID') or ''
 if not DEV_GUILD_ID:
     raise ValueError('BUILD_TYPE environment variable is required')
 
-BASE_DIR = Path(__file__).resolve().parent
+POSTGRES_USERNAME: str = os.getenv('POSTGRES_USERNAME') or ''
+if not POSTGRES_USERNAME:
+    raise ValueError('POSTGRES_USERNAME environment variable is required')
 
-DB_PATH = BASE_DIR / "data" / "moderation.db"
+POSTGRES_PASSWORD: str = os.getenv('POSTGRES_PASSWORD') or ''
+if not POSTGRES_PASSWORD:
+    raise ValueError('POSTGRES_PASSWORD environment variable is required')
+
+BASE_DIR = Path(__file__).resolve().parent

@@ -7,3 +7,5 @@ functools
 pytest
 pytest-asyncio
 pydantic
+python-dateutil
+asyncpg

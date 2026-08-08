@@ -12,3 +12,11 @@ class UserNotes(BaseModel):
     username: str
     notes: List[Note]
     isWarning: bool = False
+
+
+class Ban(BaseModel):
+    reason: str
+    ban_date: datetime.datetime | None
+    unban_date: datetime.datetime | None
+    staff_id: int
+    username: str
