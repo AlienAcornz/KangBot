@@ -61,6 +61,13 @@ class ModDB:
                 )
             ''')
 
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS guilds (
+                    guild_id BIGINT PRIMARY KEY,
+                    log_channel_id BIGINT
+                )
+            ''')
+
         print("ModDB connected!")
 
     async def close(self):
@@ -233,5 +240,19 @@ class ModDB:
 
     async def get_username(self, user_id: int):
         return await self.db.fetchval("SELECT username FROM users WHERE user_id = $1", user_id)
+
+    async def set_log_channel(self, guild_id: int, channel_id: int):
+        query = """
+                INSERT INTO guilds (guild_id, log_channel_id)
+                VALUES ($1, $2)
+                ON CONFLICT (guild_id) DO UPDATE SET log_channel_id = EXCLUDED.log_channel_id;
+                """
+        await self.db.execute(
+            query,
+            guild_id, channel_id
+        )
+
+    async def get_log_channel(self, guild_id: int):
+        return await self.db.fetchval("SELECT log_channel_id FROM guilds WHERE guild_id = $1", guild_id)
     
 db = ModDB(dsn=f"postgresql://{POSTGRES_USERNAME}:{POSTGRES_PASSWORD}@localhost:5432/moderation")

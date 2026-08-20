@@ -17,7 +17,7 @@ def check_role_hierarchy(func):
             await interaction.response.send_message(embed=ui_response_message(contents="❌ You cannot moderate yourself!", tone="negative"),ephemeral=True)
             return
 
-        if not isinstance(interaction.user, discord.Member):
+        if not isinstance(interaction.user, discord.Member) or interaction.guild is None:
             await interaction.response.send_message(embed=ui_response_message(contents="❌This command must be used in a server where role hierarchy is available.", tone="negative"),ephemeral=True)
             return
 
@@ -28,7 +28,13 @@ def check_role_hierarchy(func):
             )
             return
         
-        #TODO Check if the bot has a lower role than the target
+
+        if member.top_role >= interaction.guild.me.top_role:
+            await interaction.response.send_message(
+                embed=ui_response_message(contents="❌ I cannot moderate a member with a role equal to or higher than my top role!", tone="negative"),
+                ephemeral=True
+            )
+            return
         
         return await func(self, interaction, member, *args, **kwargs)
     return wrapper
@@ -341,5 +347,16 @@ class Moderation(commands.Cog):
 
         await interaction.followup.send(embed=ui_response_message(f"✅ {username} unbanned!", tone="positive"))
 
+
+
+    @app_commands.command(name="set-logs", description="Defines current channel as logs")
+    @app_commands.default_permissions(administrator=True)
+    async def set_log_channel(self, interaction: discord.Interaction):
+        if not interaction.guild or not interaction.channel:
+            return
+        await interaction.response.defer(ephemeral=True)
+        await db.set_log_channel(guild_id=interaction.guild.id, channel_id=interaction.channel.id)
+
+        await interaction.followup.send(embed=ui_response_message(f"✅ Set {getattr(interaction.channel, 'mention', str(interaction.channel.id))} as the log channel!", tone="positive"))
 async def setup(bot):
     await bot.add_cog(Moderation(bot))

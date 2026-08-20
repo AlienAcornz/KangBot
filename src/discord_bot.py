@@ -12,9 +12,11 @@ class Bot(commands.Bot):
     def __init__(self):
         intents = discord.Intents.default()
         intents.members = True 
+        intents.messages = True 
         intents.message_content = True
+        intents.guild_messages = True
         intents.moderation = True
-        super().__init__(command_prefix="!", intents=intents)
+        super().__init__(command_prefix="!", intents=intents, max_messages=8000)
 
     async def setup_hook(self):
         base = os.path.dirname(__file__) # path to src/

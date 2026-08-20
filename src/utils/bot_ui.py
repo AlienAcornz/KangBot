@@ -74,3 +74,33 @@ def ui_dm_message(message_type: str, guild_name: str, guild_img, contents: str="
 
     embed.set_thumbnail(url=guild_img)
     return embed
+
+
+def ui_edit_message(before: discord.Message, after: discord.Message):
+    embed = discord.Embed(
+        title="Message Edited",
+        description=f"From: {before.author.mention} in {getattr(before.channel, 'mention', str(before.channel.id))}",
+        color=NEUTRAL_COLOR
+    )
+
+    embed.add_field(name="Before", value=before.content)
+    embed.add_field(name="After", value=after.content)
+
+    return embed
+
+
+def ui_delete_message(message: discord.Message):
+    embed = discord.Embed(
+        title="Message Deleted",
+        description=f"From: {message.author.mention} in {getattr(message.channel, 'mention', str(message.channel.id))}",
+        color=NEGATIVE_COLOR
+    )
+
+    content_text = message.content if message.content else "No text content"
+    embed.add_field(name="Content", value=content_text)
+
+    if message.attachments:
+        file_list = "\n".join([f"[{att.filename}]({att.url})" for att in message.attachments])
+        embed.add_field(name="Attachments", value=file_list, inline=False)
+
+    return embed
