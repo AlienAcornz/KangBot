@@ -16,7 +16,7 @@ class UserNotes(BaseModel):
 
 class Ban(BaseModel):
     reason: str
-    ban_date: datetime.datetime | None
-    unban_date: datetime.datetime | None
+    ban_date: datetime.datetime
+    unban_date: datetime.datetime
     staff_id: int
     username: str

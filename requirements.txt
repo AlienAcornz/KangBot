@@ -1,11 +1,6 @@
 discord.py
 python-dotenv
 aiosqlite
-datetime
-typing
-functools
-pytest
-pytest-asyncio
 pydantic
 python-dateutil
 asyncpg

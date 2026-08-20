@@ -2,7 +2,7 @@ import datetime
 from typing import Optional
 from config import POSTGRES_USERNAME, POSTGRES_PASSWORD
 from src.schemas.db_schemas import UserNotes, Note, Ban
-
+import os
 import asyncpg
 
 class ModDB:
@@ -165,8 +165,9 @@ class ModDB:
         query = "SELECT bans.content, bans.ban_date, bans.unban_date, bans.staff_id, users.username FROM bans INNER JOIN users ON bans.user_id = users.user_id WHERE bans.user_id = $1 AND bans.guild_id = $2"
         row = await self.db.fetchrow(query, user_id,guild_id)
         if not row:
-            return Ban(reason="", ban_date=None, unban_date=None, staff_id=0, username="null")
+            return Ban(reason="", ban_date=datetime.datetime.now(datetime.timezone.utc), unban_date=datetime.datetime.now(datetime.timezone.utc), staff_id=0, username="null")
 
+        print(row)
         return Ban(reason=row["content"], ban_date=row["ban_date"], unban_date=row["unban_date"], staff_id=row["staff_id"], username=row["username"])
 
         
@@ -186,7 +187,7 @@ class ModDB:
         await self.db.execute("DELETE FROM bans WHERE user_id = $1 AND guild_id = $2", user_id,guild_id)
 
         if silent == False:
-             await self.record_note(user_id=user_id,reason=f"User was previously banned with the reason: {ban_reason}", staff_id=0, guild_id=guild_id) #NOTE STAFF ID SET TO 0. THIS SHOULD PROBABLY CHANGE IN THE FUTURE
+             await self.record_note(user_id=user_id,reason=f"User was previously banned with the reason: {ban_reason["content"]}", staff_id=0, guild_id=guild_id) #NOTE STAFF ID SET TO 0. THIS SHOULD PROBABLY CHANGE IN THE FUTURE
         
         
         return user_id
@@ -255,4 +256,5 @@ class ModDB:
     async def get_log_channel(self, guild_id: int):
         return await self.db.fetchval("SELECT log_channel_id FROM guilds WHERE guild_id = $1", guild_id)
     
-db = ModDB(dsn=f"postgresql://{POSTGRES_USERNAME}:{POSTGRES_PASSWORD}@localhost:5432/moderation")
+POSTGRES_HOST = os.environ.get("POSTGRES_HOST", "localhost")  # falls back to localhost for local dev
+db = ModDB(dsn=f"postgresql://{POSTGRES_USERNAME}:{POSTGRES_PASSWORD}@{POSTGRES_HOST}:5432/moderation")

@@ -15,7 +15,7 @@ def str_to_time(value: str) -> datetime.datetime | bool:
     if not str_time.isdigit():
         return False
     
-    current_time = datetime.datetime.now()
+    current_time = datetime.datetime.now(datetime.timezone.utc)
     time = int(str_time)
     match unit:
         case "m":

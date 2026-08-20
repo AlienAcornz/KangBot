@@ -93,7 +93,7 @@ async def test_record_note_via_userid(moddb):
 async def test_record_ban_user_exists(moddb):
     await moddb.append_user(user_id=12,username="John")
 
-    await moddb.record_ban(user_id=12, username="John", reason="Too cool",unban_date=datetime.datetime.now(), staff_id=1)
+    await moddb.record_ban(user_id=12, username="John", reason="Too cool",unban_date=datetime.datetime.now(datetime.timezone.utc), staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM bans WHERE user_id = ? AND content = ?)", (12, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False
@@ -102,7 +102,7 @@ async def test_record_ban_user_exists(moddb):
 
 @pytest.mark.asyncio
 async def test_record_ban_user_doesnt_exist(moddb):
-    await moddb.record_ban(user_id=16, username="Philip", reason="Too cool", unban_date=datetime.datetime.now(), staff_id=1)
+    await moddb.record_ban(user_id=16, username="Philip", reason="Too cool", unban_date=datetime.datetime.now(datetime.timezone.utc), staff_id=1)
     cursor = await moddb.db.execute("SELECT EXISTS(SELECT 1 FROM notes WHERE user_id = ? AND content = ?)", (16, "Too cool"))
     result = await cursor.fetchone()
     exists =  bool(result[0]) if result else False

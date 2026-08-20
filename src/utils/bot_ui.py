@@ -45,15 +45,15 @@ def ui_ban_message(guild_name: str, guild_img, reason, unban_date: str) -> disco
     return embed
 
 def ui_ban_reason(ban: Ban)  -> discord.Embed:
-    if ban.ban_date is None or ban.unban_date is None:
-        return discord.Embed()
+    if ban.username == "null" and ban.staff_id == 0:
+        return discord.Embed(title="❌ User not found")
 
     embed = discord.Embed(
         title=f"Ban for {ban.username}",
         color=BRAND_COLOR,
         description=(
             f"{ban.reason}\n\n"
-            f"{time_between_dates(datetime.datetime.now(), ban.unban_date)} until unban ({ban.unban_date})\n"
+            f"{time_between_dates(datetime.datetime.now(datetime.timezone.utc), ban.unban_date)} until unban ({ban.unban_date})\n"
             f"Originally banned on {ban.ban_date}"
         ),
     )
