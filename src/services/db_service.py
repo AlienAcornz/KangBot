@@ -1,14 +1,18 @@
 import datetime
 from typing import Optional
-from config import POSTGRES_USERNAME, POSTGRES_PASSWORD
+from config import POSTGRES_USERNAME, POSTGRES_PASSWORD, ENCRYPTION_KEY
 from src.schemas.db_schemas import UserNotes, Note, Ban
 import os
 import asyncpg
+from cryptography.fernet import Fernet
+
 
 class ModDB:
     def __init__(self, dsn):
         self.dsn = dsn
         self._pool: Optional[asyncpg.Pool] = None
+
+        self.fernet = Fernet(ENCRYPTION_KEY.encode())
 
     @property
     def db(self) -> asyncpg.Pool:
@@ -59,10 +63,11 @@ class ModDB:
 
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS profiles (
-                    profile_id BIGSERIAL PRIMARY KEY,
+                    profile_id BIGSERIAL,
                     user_id BIGINT,
                     username TEXT NOT NULL,
-                    guild_id BIGINT
+                    guild_id BIGINT,
+                    PRIMARY KEY (guild_id, user_id)
                 )
             '''
             )
@@ -74,6 +79,12 @@ class ModDB:
             await self._pool.close()
             self._pool = None
 
+    def __encrypt_username(self, username: str) -> str:
+        return self.fernet.encrypt(username.encode("utf-8")).decode("utf-8")
+
+    def __decrypt_username(self, text: str) -> str:
+        return self.fernet.decrypt(text.encode("utf-8")).decode("utf-8")
+    
     async def validate_inputs(self, query, guild_id: int) -> int: #THERE IS AN ERROR HERW
         if isinstance(query, int):
             return query
@@ -98,12 +109,13 @@ class ModDB:
         if not user_id or not username or not guild_id:
             raise TypeError("guild_id, username and user_id are required.")
 
+        encrypted_username = self.__encrypt_username(username)
         query = """
             INSERT INTO profiles (user_id, username, guild_id)
             VALUES ($1, $2, $3)
             ON CONFLICT (user_id, guild_id) DO UPDATE SET username = EXCLUDED.username;
         """
-        await self.db.execute(query, user_id, username, guild_id)
+        await self.db.execute(query, user_id, encrypted_username, guild_id)
 
 
     async def record_warning(self, staff_id: int, user_id: int, username: str, reason: str, guild_id: int): #records a warning
@@ -154,7 +166,7 @@ class ModDB:
 
         username = str(user_id)
         if rows:
-            username = rows[0][0]
+            username = self.__decrypt_username(rows[0][0])
 
         total_notes = []
         for note in rows:
@@ -177,7 +189,7 @@ class ModDB:
             return Ban(reason="", ban_date=datetime.datetime.now(datetime.timezone.utc), unban_date=datetime.datetime.now(datetime.timezone.utc), staff_id=0, username="null")
 
         print(row)
-        return Ban(reason=row["content"], ban_date=row["ban_date"], unban_date=row["unban_date"], staff_id=row["staff_id"], username=row["username"])
+        return Ban(reason=row["content"], ban_date=row["ban_date"], unban_date=row["unban_date"], staff_id=row["staff_id"], username=self.__decrypt_username(row["username"]))
 
         
 
@@ -246,10 +258,10 @@ class ModDB:
 
         
     async def get_user_id(self, username: str, guild_id: int):
-        return await self.db.fetchval("SELECT user_id FROM profiles WHERE username = $1 AND guild_id = $2", username, guild_id)
+        return await self.db.fetchval("SELECT user_id FROM profiles WHERE username = $1 AND guild_id = $2", self.__encrypt_username(username), guild_id)
 
     async def get_username(self, user_id: int, guild_id: int):
-        return await self.db.fetchval("SELECT username FROM profiles WHERE user_id = $1 AND guild_id = $2", user_id, guild_id)
+        return self.__decrypt_username(await self.db.fetchval("SELECT username FROM profiles WHERE user_id = $1 AND guild_id = $2", user_id, guild_id))
 
     async def set_log_channel(self, guild_id: int, channel_id: int):
         query = """

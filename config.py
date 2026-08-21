@@ -23,4 +23,8 @@ POSTGRES_PASSWORD: str = os.getenv('POSTGRES_PASSWORD') or ''
 if not POSTGRES_PASSWORD:
     raise ValueError('POSTGRES_PASSWORD environment variable is required')
 
+ENCRYPTION_KEY: str = os.getenv('ENCRYPTION_KEY') or ''
+if not ENCRYPTION_KEY:
+    raise ValueError('ENCRYPTION_KEY environment variable is required')
+
 BASE_DIR = Path(__file__).resolve().parent
