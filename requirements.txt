@@ -4,3 +4,4 @@ aiosqlite
 pydantic
 python-dateutil
 asyncpg
+cryptography

@@ -343,7 +343,7 @@ class Moderation(commands.Cog):
         else:
             await interaction.followup.send(embed=ui_response_message("❌ There was an error performing the command", tone="negative"))
         
-        username = await db.get_username(user_id)
+        username = await db.get_username(user_id=user_id, guild_id=interaction.guild.id)
 
         await interaction.followup.send(embed=ui_response_message(f"✅ {username} unbanned!", tone="positive"))
 

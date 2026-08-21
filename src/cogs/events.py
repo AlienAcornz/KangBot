@@ -32,6 +32,10 @@ class Events(commands.Cog):
                 except discord.HTTPException as e:
                     print(f"Failed to unban {user_id}: {e}")
 
+    @tasks.loop(hours=24)
+    async def cleanse_database(self):
+        await db.clean_users()
+
     @commands.Cog.listener()
     async def on_message_edit(self, before: discord.Message, after: discord.Message):
         await self.bot.wait_until_ready()

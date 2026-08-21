@@ -24,25 +24,15 @@ class ModDB:
 
         async with self.db.acquire() as conn:
 
-        #user table
-            await conn.execute('''
-                CREATE TABLE IF NOT EXISTS users (
-                    user_id BIGINT PRIMARY KEY,
-                    username TEXT NOT NULL
-                )
-            ''')
-
             #ban table
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS bans (
-                    user_id BIGINT,
+                    profile_id BIGINT PRIMARY KEY,
                     content TEXT NOT NULL,
                     ban_date TIMESTAMPTZ,
                     unban_date TIMESTAMPTZ,
                     staff_id BIGINT,
-                    guild_id BIGINT,
-                    PRIMARY KEY (user_id, guild_id),
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                    FOREIGN KEY (profile_id) REFERENCES profiles (profile_id) ON DELETE CASCADE
                 )
             ''')
 
@@ -50,14 +40,13 @@ class ModDB:
             await conn.execute('''
                 CREATE TABLE IF NOT EXISTS notes (
                     note_id INTEGER,
-                    user_id BIGINT,
+                    profile_id BIGINT,
                     content TEXT NOT NULL,
                     timestamp TIMESTAMPTZ,
                     is_warning INTEGER,
                     staff_id BIGINT,
-                    guild_id BIGINT,
-                    PRIMARY KEY (user_id, guild_id, note_id),
-                    FOREIGN KEY (user_id) REFERENCES users (user_id)
+                    PRIMARY KEY (profile_id, note_id),
+                    FOREIGN KEY (profile_id) REFERENCES profiles (profile_id) ON DELETE CASCADE
                 )
             ''')
 
@@ -68,6 +57,16 @@ class ModDB:
                 )
             ''')
 
+            await conn.execute('''
+                CREATE TABLE IF NOT EXISTS profiles (
+                    profile_id BIGSERIAL PRIMARY KEY,
+                    user_id BIGINT,
+                    username TEXT NOT NULL,
+                    guild_id BIGINT
+                )
+            '''
+            )
+
         print("ModDB connected!")
 
     async def close(self):
@@ -75,12 +74,12 @@ class ModDB:
             await self._pool.close()
             self._pool = None
 
-    async def validate_inputs(self, query) -> int: #THERE IS AN ERROR HERW
+    async def validate_inputs(self, query, guild_id: int) -> int: #THERE IS AN ERROR HERW
         if isinstance(query, int):
             return query
 
         if isinstance(query, str):
-            user_id = await self.get_user_id(query)
+            user_id = await self.get_user_id(username=query, guild_id=guild_id)
             if user_id is None:
                 print("COULDNT FIND USER")
                 raise ValueError(f"Could not find user: {query} in the database")
@@ -88,17 +87,23 @@ class ModDB:
 
         raise ValueError("Please enter a valid type for the user field.")
 
+    async def get_profile_id(self, user_id: int, guild_id: int) -> int:
+        query = """
+            SELECT profile_id FROM profiles WHERE user_id = $1 AND guild_id = $2
+        """
 
-    async def append_user(self, user_id: int, username:str):
-        if not user_id or not username:
-            raise TypeError("Both username and user_id are required.")
+        return await self.db.fetchval(query, user_id, guild_id)
+
+    async def append_user(self, user_id: int, username:str, guild_id: int):
+        if not user_id or not username or not guild_id:
+            raise TypeError("guild_id, username and user_id are required.")
 
         query = """
-            INSERT INTO users (user_id, username)
-            VALUES ($1, $2)
-            ON CONFLICT (user_id) DO UPDATE SET username = EXCLUDED.username;
+            INSERT INTO profiles (user_id, username, guild_id)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (user_id, guild_id) DO UPDATE SET username = EXCLUDED.username;
         """
-        await self.db.execute(query, user_id, username)
+        await self.db.execute(query, user_id, username, guild_id)
 
 
     async def record_warning(self, staff_id: int, user_id: int, username: str, reason: str, guild_id: int): #records a warning
@@ -107,39 +112,42 @@ class ModDB:
     
     async def record_note(self, staff_id: int, user_id: int, reason: str, guild_id: int, username: Optional[str] = None, is_warning: int = 0):
         if username:
-            await self.append_user(user_id=user_id, username=username)
+            await self.append_user(user_id=user_id, username=username, guild_id=guild_id)
         query = """
-        INSERT INTO notes (user_id, note_id, content, timestamp, is_warning, staff_id, guild_id)
+        INSERT INTO notes (profile_id, note_id, content, timestamp, is_warning, staff_id)
         VALUES (
             $1, 
-            (SELECT COALESCE(MAX(note_id), 0) + 1 FROM notes WHERE user_id = $2 AND guild_id = $3), 
-            $4, $5, $6, $7, $8
+            (SELECT COALESCE(MAX(note_id), 0) + 1 FROM notes WHERE profile_id = $1), 
+            $2, $3, $4, $5
         )
         """
+        profile_id = await self.get_profile_id(user_id=user_id,guild_id=guild_id)
         await self.db.execute(
         query,
-        user_id, user_id, guild_id, reason, datetime.datetime.now(datetime.timezone.utc), is_warning, staff_id, guild_id
+        profile_id, reason, datetime.datetime.now(datetime.timezone.utc), is_warning, staff_id
         )
     
     async def record_ban(self, staff_id: int, user_id: int,  reason: str, guild_id: int, unban_date: datetime.datetime, username: str):
-            await self.append_user(user_id=user_id, username=username)
-
+            await self.append_user(user_id=user_id, username=username, guild_id=guild_id)
+            profile_id = await self.get_profile_id(user_id=user_id,guild_id=guild_id)
             await self.db.execute(
-                "INSERT INTO bans (user_id, content, ban_date, unban_date, staff_id, guild_id) VALUES ($1, $2, $3, $4, $5, $6)",
-                user_id, reason, datetime.datetime.now(datetime.timezone.utc), unban_date, staff_id, guild_id
+                "INSERT INTO bans (profile_id, content, ban_date, unban_date, staff_id, guild_id) VALUES ($1, $2, $3, $4, $5)",
+                profile_id, reason, datetime.datetime.now(datetime.timezone.utc), unban_date, staff_id, guild_id
             )
 
 
     
     async def get_notes(self, user, guild_id: int, is_warning: int = 0) -> UserNotes:
-        user_id = await self.validate_inputs(user)
+        user_id = await self.validate_inputs(query=user, guild_id=guild_id)
         query = """
-            SELECT users.username, notes.staff_id, notes.content, notes.note_id, notes.timestamp
+            SELECT profiles.username, notes.staff_id, notes.content, notes.note_id, notes.timestamp
             FROM notes
-            INNER JOIN users ON notes.user_id = users.user_id
-            WHERE notes.user_id = $1 AND notes.is_warning = $2 AND notes.guild_id = $3
+            INNER JOIN profiles ON notes.profile_id = profiles.profile_id
+            WHERE notes.profile_id = $1 AND notes.is_warning = $2
         """
-        rows = await self.db.fetch(query, user_id, is_warning, guild_id)
+
+        profile_id = await self.get_profile_id(user_id=user_id, guild_id=guild_id)
+        rows = await self.db.fetch(query, profile_id, is_warning)
 
         if not rows:
             return UserNotes(username="null", notes=[])
@@ -161,9 +169,10 @@ class ModDB:
     
     async def get_ban_reason(self, user, guild_id: int) -> Ban:
 
-        user_id = await self.validate_inputs(user)
-        query = "SELECT bans.content, bans.ban_date, bans.unban_date, bans.staff_id, users.username FROM bans INNER JOIN users ON bans.user_id = users.user_id WHERE bans.user_id = $1 AND bans.guild_id = $2"
-        row = await self.db.fetchrow(query, user_id,guild_id)
+        user_id = await self.validate_inputs(query=user, guild_id=guild_id)
+        profile_id = await self.get_profile_id(user_id=user_id,guild_id=guild_id)
+        query = "SELECT bans.content, bans.ban_date, bans.unban_date, bans.staff_id, profiles.username FROM bans INNER JOIN profiles ON bans.profile_id = profiles.profile_id WHERE bans.profile_id = $1"
+        row = await self.db.fetchrow(query, profile_id)
         if not row:
             return Ban(reason="", ban_date=datetime.datetime.now(datetime.timezone.utc), unban_date=datetime.datetime.now(datetime.timezone.utc), staff_id=0, username="null")
 
@@ -175,16 +184,16 @@ class ModDB:
 
     
     async def revoke_ban(self, user, guild_id: int, silent: bool = False) -> int:
-        user_id: int = await self.validate_inputs(user)
-
+        user_id: int = await self.validate_inputs(query=user, guild_id=guild_id)
+        profile_id = await self.get_profile_id(user_id=user_id,guild_id=guild_id)
         ban_reason = ban_reason = await self.db.fetchval(
-            "SELECT content FROM bans WHERE user_id = $1 AND guild_id = $2", 
-            user_id, guild_id
+            "SELECT content FROM bans WHERE profile_id = $1", 
+            profile_id
         )
 
         if ban_reason is None:
             return 0
-        await self.db.execute("DELETE FROM bans WHERE user_id = $1 AND guild_id = $2", user_id,guild_id)
+        await self.db.execute("DELETE FROM bans WHERE profile_id = $1", profile_id)
 
         if silent == False:
              await self.record_note(user_id=user_id,reason=f"User was previously banned with the reason: {ban_reason["content"]}", staff_id=0, guild_id=guild_id) #NOTE STAFF ID SET TO 0. THIS SHOULD PROBABLY CHANGE IN THE FUTURE
@@ -198,13 +207,13 @@ class ModDB:
 
     
     async def revoke_note(self, user, note_id: int, guild_id: int):
-        user_id = await self.validate_inputs(user)
+        user_id = await self.validate_inputs(query=user, guild_id=guild_id)
+        profile_id = await self.get_profile_id(user_id=user_id, guild_id=guild_id)
     
         command_tag = await self.db.execute(
-            "DELETE FROM notes WHERE user_id = $1 AND note_id = $2 AND guild_id = $3",
-            user_id,
+            "DELETE FROM notes WHERE profile_id = $1 AND note_id = $2",
+            profile_id,
             note_id,
-            guild_id,
         )
 
         deleted_rows = int(command_tag.split()[-1]) if command_tag else 0
@@ -218,9 +227,9 @@ class ModDB:
             raise RuntimeError("Database not connected!")
 
         await self.db.execute("""
-        DELETE FROM users
-        WHERE NOT EXISTS (SELECT 1 FROM notes WHERE notes.user_id = users.user_id)
-        AND NOT EXISTS (SELECT 1 FROM bans WHERE bans.user_id = users.user_id)
+        DELETE FROM profiles
+        WHERE NOT EXISTS (SELECT 1 FROM notes WHERE notes.profile_id = profiles.profile_id)
+        AND NOT EXISTS (SELECT 1 FROM bans WHERE bans.profile_id = profiles.profile_id)
         """)
 
 
@@ -236,11 +245,11 @@ class ModDB:
     
 
         
-    async def get_user_id(self, username: str):
-        return await self.db.fetchval("SELECT user_id FROM users WHERE username = $1", username)
+    async def get_user_id(self, username: str, guild_id: int):
+        return await self.db.fetchval("SELECT user_id FROM profiles WHERE username = $1 AND guild_id = $2", username, guild_id)
 
-    async def get_username(self, user_id: int):
-        return await self.db.fetchval("SELECT username FROM users WHERE user_id = $1", user_id)
+    async def get_username(self, user_id: int, guild_id: int):
+        return await self.db.fetchval("SELECT username FROM profiles WHERE user_id = $1 AND guild_id = $2", user_id, guild_id)
 
     async def set_log_channel(self, guild_id: int, channel_id: int):
         query = """
